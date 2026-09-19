@@ -48,7 +48,7 @@ module.exports = async function handler(req, res) {
   }
 
   const payload = JSON.stringify({
-    model: model || "llama3-8b-8192",
+    model: model || "llama-3.3-70b-versatile"
     messages,
     temperature: temperature ?? 0.7,
     max_tokens: max_tokens ?? 1024,
