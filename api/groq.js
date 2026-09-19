@@ -28,7 +28,7 @@ module.exports = async function handler(req, res) {
   if (!groqApiKey) return res.status(500).json({ error: "Server misconfiguration" });
 
   const payload = JSON.stringify({
-    model: parsed.model || "llama-3.3-70b-versatile",
+    model: parsed.model || "qwen/qwen3.8-27b",
     messages: parsed.messages,
     temperature: parsed.temperature !== undefined ? parsed.temperature : 0.7,
     max_tokens: parsed.max_tokens || 1024,
