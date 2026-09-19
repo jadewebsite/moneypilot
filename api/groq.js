@@ -1,60 +1,39 @@
-// Vercel Serverless Function — /api/groq
-// Proxies requests from your Android app to Groq API.
-// Your Groq API key lives ONLY in Vercel's encrypted Environment Variables.
-// It is never in your code or your APK.
-
 const https = require("https");
 
 const GROQ_API_HOST = "api.groq.com";
 const GROQ_API_PATH = "/openai/v1/chat/completions";
 
 module.exports = async function handler(req, res) {
-  // --- CORS ---
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, x-app-secret");
 
-  if (req.method === "OPTIONS") {
-    return res.status(204).end();
-  }
+  if (req.method === "OPTIONS") return res.status(204).end();
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  // --- Only POST allowed ---
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
-
-  // --- Validate shared secret from Android app ---
-  // Stored in Vercel → Project Settings → Environment Variables as APP_SECRET
   const appSecret = process.env.APP_SECRET;
-  if (appSecret) {
-    const provided = req.headers["x-app-secret"];
-    if (provided !== appSecret) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
+  if (appSecret && req.headers["x-app-secret"] !== appSecret) {
+    return res.status(401).json({ error: "Unauthorized" });
   }
 
-  // --- Validate body ---
-  const { model, messages, temperature, max_tokens } = req.body;
-  if (!messages || !Array.isArray(messages)) {
+  let parsed = req.body;
+  if (typeof parsed === "string") {
+    try { parsed = JSON.parse(parsed); } catch { return res.status(400).json({ error: "Invalid JSON" }); }
+  }
+  if (!parsed || !Array.isArray(parsed.messages)) {
     return res.status(400).json({ error: "messages array is required" });
   }
 
-  // --- Groq API key from Vercel Environment Variable ---
-  // Set in Vercel Dashboard → Project → Settings → Environment Variables
-  // Name: GROQ_API_KEY  Value: gsk_...
   const groqApiKey = process.env.GROQ_API_KEY;
-  if (!groqApiKey) {
-    return res.status(500).json({ error: "Server misconfiguration" });
-  }
+  if (!groqApiKey) return res.status(500).json({ error: "Server misconfiguration" });
 
   const payload = JSON.stringify({
-    model: model || "llama-3.3-70b-versatile"
-    messages,
-    temperature: temperature ?? 0.7,
-    max_tokens: max_tokens ?? 1024,
+    model: parsed.model || "llama-3.3-70b-versatile",
+    messages: parsed.messages,
+    temperature: parsed.temperature !== undefined ? parsed.temperature : 0.7,
+    max_tokens: parsed.max_tokens || 1024,
   });
 
-  // --- Forward to Groq ---
   return new Promise((resolve) => {
     const options = {
       hostname: GROQ_API_HOST,
@@ -62,7 +41,7 @@ module.exports = async function handler(req, res) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${groqApiKey}`,
+        "Authorization": "Bearer " + groqApiKey,
         "Content-Length": Buffer.byteLength(payload),
       },
     };
@@ -72,9 +51,8 @@ module.exports = async function handler(req, res) {
       groqRes.on("data", (chunk) => (data += chunk));
       groqRes.on("end", () => {
         try {
-          const parsed = JSON.parse(data);
-          res.status(groqRes.statusCode).json(parsed);
-        } catch {
+          res.status(groqRes.statusCode).json(JSON.parse(data));
+        } catch (e) {
           res.status(500).json({ error: "Invalid response from Groq" });
         }
         resolve();
